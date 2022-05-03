@@ -1,0 +1,170 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+
+// Credits to the original Script - Range Filter DonovanWall https://www.tradingview.com/script/lut7sBgG-Range-Filter-DW/
+// This version is the old version of the Range Filter with less settings to tinker with
+
+//@version=4
+strategy(title="SwingFree", overlay=true, initial_capital=100, default_qty_value=0.01)
+// BTCBUSD 1h
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Functions
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Range Size Function
+rng_size(x, qty, n)=> 
+//    AC       = Cond_EMA(abs(x - x[1]), 1, n)
+    wper      = (n*2) - 1
+    avrng     = ema(abs(x - x[1]), n)
+    AC = ema(avrng, wper)*qty
+    rng_size = AC
+
+//Range Filter Function
+rng_filt(x, rng_, n)=>
+    r          = rng_
+    var rfilt  = array.new_float(2, x)
+    array.set(rfilt, 1, array.get(rfilt, 0))
+    if x - r > array.get(rfilt, 1)
+        array.set(rfilt, 0, x - r)
+    if x + r < array.get(rfilt, 1)
+        array.set(rfilt, 0, x + r)
+    rng_filt1 = array.get(rfilt, 0)
+    
+    hi_band   = rng_filt1 + r
+    lo_band   = rng_filt1 - r
+    rng_filt  = rng_filt1
+    [hi_band, lo_band, rng_filt]
+ 
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Inputs
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//Range Source
+rng_src = input(defval=close, type=input.source, title="Swing Source")
+
+//Range Period
+rng_per = input(defval=20, minval=1, title="Swing Period")
+
+//Range Size Inputs
+rng_qty   = input(defval=3.5, minval=0.0000001, title="Swing Multiplier")
+
+//Bar Colors
+use_barcolor = input(defval=false, type=input.bool, title="Bar Colors On/Off")
+
+startDate = input(title="Start Date", type=input.integer,
+     defval=1, minval=1, maxval=31)
+startMonth = input(title="Start Month", type=input.integer,
+     defval=1, minval=1, maxval=12)
+startYear = input(title="Start Year", type=input.integer,
+     defval=2021, minval=1800, maxval=2100)
+
+afterStartDate = (time >= timestamp(syminfo.timezone,
+     startYear, startMonth, startDate, 0, 0))
+
+//EMA FILTER
+int ma_1_val = input(200, '', minval=1, inline='MA 1')
+int ma_2_val = input(50, '', minval=1, inline='MA 2')
+
+// BBPT FILTER
+reg_trend_on = input(false, "Activate Reg Trend Line")
+length       = input(defval=8, title="🔹 Length Reg Trend line=", minval=1)
+
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Definitions
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//Range Filter Values
+[h_band, l_band, filt] = rng_filt(rng_src, rng_size(rng_src, rng_qty, rng_per), rng_per)
+
+//Direction Conditions
+var fdir = 0.0
+fdir    := filt > filt[1] ? 1 : filt < filt[1] ? -1 : fdir
+upward   = fdir==1 ? 1 : 0
+downward = fdir==-1 ? 1 : 0
+
+//========= EMA FILTER =========//
+ema_1 = ema(close, ma_1_val)
+ema_2 = ema(close, ma_2_val)
+up_ema = ema_2 > ema_1
+down_ema = ema_2 < ema_1
+
+//=== BULL BEAR POWER FILTER ===//
+BullTrend_hist = 0.0
+BearTrend_hist = 0.0
+
+BullTrend = (close - lowest(low, 50)) / atr(5)
+BearTrend = (highest(high, 50) - close) / atr(5)
+BearTrend2= -1*BearTrend
+
+Trend = BullTrend - BearTrend
+up_trend = Trend > 2
+down_trend = Trend < -2
+
+//Trading Condition
+longCond = rng_src > filt and rng_src > rng_src[1] and upward > 0 or rng_src > filt and rng_src < rng_src[1] and upward > 0 
+shortCond = rng_src < filt and rng_src < rng_src[1] and downward > 0 or rng_src < filt and rng_src > rng_src[1] and downward > 0
+
+CondIni = 0
+CondIni := longCond ? 1 : shortCond ? -1 : CondIni[1]
+indLongCond = longCond and CondIni[1] == -1
+indShortCond = shortCond and CondIni[1] == 1
+
+longCondition = indLongCond and afterStartDate and up_ema and up_trend
+shortCondition = indShortCond and afterStartDate and down_ema and down_trend
+
+//Colors
+filt_color = upward ? #05ff9b : downward ? #ff0583 : #cccccc
+bar_color  = upward and (rng_src > filt) ? (rng_src > rng_src[1] ? #05ff9b : #00b36b) :
+             downward and (rng_src < filt) ? (rng_src < rng_src[1] ? #ff0583 : #b8005d) : #cccccc
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Outputs
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//Filter Plot
+filt_plot = plot(filt, color=filt_color, transp=67, linewidth=3, title="Filter")
+
+//Band Plots
+h_band_plot = plot(h_band, color=color.new(#05ff9b, 100), title="High Band")
+l_band_plot = plot(l_band, color=color.new(#ff0583, 100), title="Low Band")
+
+//Band Fills
+fill(h_band_plot, filt_plot, color=color.new(#00b36b, 92), title="High Band Fill")
+fill(l_band_plot, filt_plot, color=color.new(#b8005d, 92), title="Low Band Fill")
+
+//Bar Color
+barcolor(use_barcolor ? bar_color : na)
+
+//Plot Buy and Sell Labels
+plotshape(indLongCond, title = "Buy Signal", text ="BUY", textcolor = color.white, style=shape.labelup, size = size.normal, location=location.belowbar, color = longCondition? color.new(color.green, 0) : color.new(color.gray, 50))
+plotshape(indShortCond, title = "Sell Signal", text ="SELL", textcolor = color.white, style=shape.labeldown, size = size.normal, location=location.abovebar, color = shortCondition? color.new(color.red, 0) : color.new(color.gray, 50))
+
+var float sl_point       = 0.
+
+
+//Buy and Sell
+// close buy for TP only
+if strategy.position_size > 0
+    if close < sl_point
+        strategy.close("Long", comment="LONG SL : " + tostring((close - strategy.position_avg_price) * strategy.position_size))
+    if indShortCond and close > strategy.position_avg_price
+        strategy.close("Long", comment="LONG TP : " + tostring(sl_point) + "TP : " + tostring((close - strategy.position_avg_price) * strategy.position_size))
+    
+// close sell for TP only
+if strategy.position_size < 0
+    if close > sl_point
+        strategy.close("Short", comment="SHORT SL : " + tostring((close - strategy.position_avg_price) * strategy.position_size))
+    if indLongCond and close < strategy.position_avg_price
+        strategy.close("Short", comment="SHORT TP : " +tostring((close - strategy.position_avg_price) * strategy.position_size))
+    
+// buy
+if longCondition and strategy.position_size == 0
+    sl_point := ema_1
+    strategy.entry( id = "Long", long = true, comment = "slp : " + tostring(sl_point))
+    
+
+// sell
+if shortCondition and strategy.position_size == 0
+    sl_point := ema_1
+    strategy.entry( id = "Short", long = false, comment = "slp : " + tostring(sl_point))
+    
+
