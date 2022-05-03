@@ -60,8 +60,8 @@ afterStartDate = (time >= timestamp(syminfo.timezone,
      startYear, startMonth, startDate, 0, 0))
 
 //EMA FILTER
-int ma_1_val = input(200, '', minval=1, inline='MA 1')
-int ma_2_val = input(50, '', minval=1, inline='MA 2')
+int ma_1_val = input(200, 'EMA 1', minval=1, inline='MA 1')
+int ma_2_val = input(50, 'EMA 2', minval=1, inline='MA 2')
 
 // BBPT FILTER
 reg_trend_on = input(false, "Activate Reg Trend Line")
